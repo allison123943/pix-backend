@@ -52,6 +52,7 @@ app.post('/criar-pagamento', async (req, res) => {
     const externalReference = uuidv4();
 
     const payment_data = {
+      statement_descriptor: 'Finanzap',
       transaction_amount: parseFloat(valor.toFixed(2)),
       description: 'Finanzap',
       payment_method_id: 'pix',
