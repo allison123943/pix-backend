@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const mercadopago = require('mercadopago');
 
 const app = express();
 app.use(cors());
@@ -13,6 +14,12 @@ app.use(express.json());
 
 const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27892a0d-287816612';
 const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
+const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
+
+// Configurando o Mercado Pago SDK
+mercadopago.configure({
+  access_token: ACCESS_TOKEN
+});
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -37,10 +44,8 @@ function verifySignature(req, secret) {
 app.post('/webhook', (req, res) => {
   try {
     const event = req.body;
-
     console.log('Webhook recebido:', JSON.stringify(event, null, 2));
 
-    // Verificar se o evento é um pagamento e está aprovado ou atualizado
     if (event.type === 'payment' && (event.action === 'payment.updated' || event.data.status === 'approved')) {
       console.log('Pagamento atualizado/aprovado:', event.data.id);
       res.status(200).send('Pagamento recebido e processado');
@@ -64,11 +69,14 @@ app.post('/criar-pagamento', async (req, res) => {
 
     const idempotencyKey = uuidv4();
     const valor = plano === 'normal' ? 27.50 : 1;
+    const externalReference = uuidv4();
 
-    const response = await axios.post('https://api.mercadopago.com/v1/payments', {
+    const payment_data = {
       transaction_amount: parseFloat(valor.toFixed(2)),
       description: 'Finanzap',
       payment_method_id: 'pix',
+      notification_url: WEBHOOK_URL,
+      external_reference: externalReference,
       payer: {
         email: email,
         first_name: 'Cliente',
@@ -77,16 +85,22 @@ app.post('/criar-pagamento', async (req, res) => {
           type: 'CPF',
           number: '12345678909'
         }
+      },
+      additional_info: {
+        items: [{
+          id: 'finanzap_001',
+          title: `Plano ${plano}`,
+          description: 'Acesso ao Assistente Financeiro',
+          category_id: 'services',
+          quantity: 1,
+          unit_price: parseFloat(valor.toFixed(2))
+        }]
       }
-    }, {
-      headers: {
-        Authorization: `Bearer ${ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
-        'X-Idempotency-Key': idempotencyKey
-      }
-    });
+    };
 
-    if (response.data && response.data.id) {
+    const response = await mercadopago.payment.create(payment_data);
+
+    if (response.body && response.body.id) {
       const planoArquivo = planos[plano] || planos.normal;
       const pdfPath = path.join(__dirname, planoArquivo);
 
@@ -103,10 +117,10 @@ app.post('/criar-pagamento', async (req, res) => {
         ]
       });
 
-      res.json({ paymentId: response.data.id, status: response.data.status });
+      res.json({ paymentId: response.body.id, status: response.body.status });
     } else {
-      console.error('Erro: Resposta inesperada do Mercado Pago:', response.data);
-      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.data });
+      console.error('Erro: Resposta inesperada do Mercado Pago:', response.body);
+      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.body });
     }
   } catch (error) {
     console.error('Erro ao criar pagamento:', error.response?.data || error.message);
