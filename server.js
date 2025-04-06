@@ -53,8 +53,19 @@ app.post('/criar-pagamento', async (req, res) => {
 
     const payment_data = {
       statement_descriptor: 'Finanzap',
+      statement_descriptor: 'Finanzap',
       transaction_amount: parseFloat(valor.toFixed(2)),
       description: 'Finanzap',
+      additional_info: {
+        items: [{
+          id: 'finanzap_001',
+          title: `Plano ${plano}`,
+          description: 'Acesso ao Assistente Financeiro',
+          category_id: 'services',
+          quantity: 1,
+          unit_price: parseFloat(valor.toFixed(2))
+        }]
+      },
       payment_method_id: 'pix',
       notification_url: WEBHOOK_URL,
       external_reference: externalReference,
