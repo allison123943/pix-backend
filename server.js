@@ -17,9 +17,7 @@ const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324
 const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 
 // Configurando o Mercado Pago SDK
-mercadopago.configure({
-  access_token: ACCESS_TOKEN
-});
+mercadopago.configure({ access_token: ACCESS_TOKEN });
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
