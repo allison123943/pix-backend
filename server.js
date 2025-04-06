@@ -29,25 +29,43 @@ const planos = {
 };
 
 function verifySignature(req, secret) {
-  const signature = req.headers['x-hub-signature'] || '';
+  const signature = req.headers['x-mp-signature'] || '';
   const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
-  return signature === `sha256=${hash}`;
+  return signature === hash;
 }
 
 app.post('/webhook', (req, res) => {
-  if (!verifySignature(req, WEBHOOK_SECRET)) {
-    console.log('Assinatura inválida');
-    return res.status(401).send('Invalid signature');
+  try {
+    if (!verifySignature(req, WEBHOOK_SECRET)) {
+      console.log('Assinatura inválida');
+      return res.status(401).send('Invalid signature');
+    }
+
+    const event = req.body;
+
+    console.log('Webhook recebido:', JSON.stringify(event, null, 2));
+
+    // Verifica o tipo de evento e a ação
+    if (event.type === 'payment') {
+      if (event.action === 'payment.created') {
+        console.log('Pagamento criado:', event.data.id);
+      } else if (event.action === 'payment.updated') {
+        console.log('Pagamento atualizado:', event.data.id);
+      } else if (event.action === 'payment.success' || event.data.status === 'approved') {
+        console.log('Pagamento aprovado:', event.data.id);
+        // Aqui podemos buscar o pagamento e enviar o PDF
+      } else {
+        console.log('Evento de pagamento não tratado:', event.action);
+      }
+    } else {
+      console.log('Evento não relacionado a pagamento:', event.type);
+    }
+
+    res.status(200).send('Webhook recebido');
+  } catch (error) {
+    console.error('Erro ao processar webhook:', error.message);
+    res.status(500).send('Erro no processamento do webhook');
   }
-
-  const event = req.body;
-
-  if (event.action === 'payment.success') {
-    console.log('Pagamento aprovado:', event.data.id);
-    // Aqui você pode buscar o pagamento no Mercado Pago e enviar o PDF
-  }
-
-  res.status(200).send('Webhook recebido');
 });
 
 app.post('/criar-pagamento', async (req, res) => {
@@ -94,7 +112,7 @@ app.post('/criar-pagamento', async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
-    console.error(error.response?.data || error.message);
+    console.error('Erro ao criar pagamento:', error.response?.data || error.message);
     res.status(500).send("Erro ao criar pagamento");
   }
 });
