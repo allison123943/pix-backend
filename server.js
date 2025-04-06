@@ -5,12 +5,14 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27892a0d-287816612';
+const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -25,6 +27,28 @@ const planos = {
   casal: 'instrucoes_assistente_financeiro_plano casal.pdf',
   familia: 'instrucoes_assistente_financeiro_plano familia.pdf'
 };
+
+function verifySignature(req, secret) {
+  const signature = req.headers['x-hub-signature'] || '';
+  const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
+  return signature === `sha256=${hash}`;
+}
+
+app.post('/webhook', (req, res) => {
+  if (!verifySignature(req, WEBHOOK_SECRET)) {
+    console.log('Assinatura inválida');
+    return res.status(401).send('Invalid signature');
+  }
+
+  const event = req.body;
+
+  if (event.action === 'payment.success') {
+    console.log('Pagamento aprovado:', event.data.id);
+    // Aqui você pode buscar o pagamento no Mercado Pago e enviar o PDF
+  }
+
+  res.status(200).send('Webhook recebido');
+});
 
 app.post('/criar-pagamento', async (req, res) => {
   try {
