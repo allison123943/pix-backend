@@ -34,38 +34,20 @@ function verifySignature(req, secret) {
   return signature === hash;
 }
 
-app.get('/status-pagamento/:id', async (req, res) => {
-  try {
-    const paymentId = req.params.id;
-    const response = await axios.get(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
-      headers: {
-        Authorization: `Bearer ${ACCESS_TOKEN}`
-      }
-    });
-    res.json({ status: response.data.status });
-  } catch (error) {
-    console.error('Erro ao obter status do pagamento:', error.response?.data || error.message);
-    res.status(500).send('Erro ao obter status do pagamento');
-  }
-});
-
 app.post('/webhook', (req, res) => {
   try {
-    if (!verifySignature(req, WEBHOOK_SECRET)) {
-      console.log('Assinatura inválida');
-      return res.status(401).send('Invalid signature');
-    }
-
     const event = req.body;
+
     console.log('Webhook recebido:', JSON.stringify(event, null, 2));
 
-    if (event.type === 'payment') {
-      if (event.action === 'payment.success' || event.data.status === 'approved') {
-        console.log('Pagamento aprovado:', event.data.id);
-      }
+    // Verificar se o evento é um pagamento e está aprovado ou atualizado
+    if (event.type === 'payment' && (event.action === 'payment.updated' || event.data.status === 'approved')) {
+      console.log('Pagamento atualizado/aprovado:', event.data.id);
+      res.status(200).send('Pagamento recebido e processado');
+    } else {
+      console.log('Evento não tratado:', event.type, event.action);
+      res.status(200).send('Evento recebido, mas não tratado');
     }
-
-    res.status(200).send('Webhook recebido');
   } catch (error) {
     console.error('Erro ao processar webhook:', error.message);
     res.status(500).send('Erro no processamento do webhook');
@@ -81,7 +63,7 @@ app.post('/criar-pagamento', async (req, res) => {
     }
 
     const idempotencyKey = uuidv4();
-    const valor = plano === 'normal' ? 27.50 : 1;  // Valor ajustado para o plano normal
+    const valor = plano === 'normal' ? 27.50 : 1;
 
     const response = await axios.post('https://api.mercadopago.com/v1/payments', {
       transaction_amount: parseFloat(valor.toFixed(2)),
@@ -124,7 +106,7 @@ app.post('/criar-pagamento', async (req, res) => {
       res.json({ paymentId: response.data.id, status: response.data.status });
     } else {
       console.error('Erro: Resposta inesperada do Mercado Pago:', response.data);
-      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago' });
+      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.data });
     }
   } catch (error) {
     console.error('Erro ao criar pagamento:', error.response?.data || error.message);
