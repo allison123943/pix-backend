@@ -39,6 +39,24 @@ function verifySignature(req, secret) {
   return signature === hash;
 }
 
+app.post('/webhook', (req, res) => {
+  try {
+    const event = req.body;
+    console.log('Webhook recebido:', JSON.stringify(event, null, 2));
+
+    if (event.type === 'payment' && event.data && event.data.id) {
+      console.log('Pagamento recebido:', event.data.id);
+      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido' });
+    } else {
+      console.log('Evento não tratado:', event.type);
+      res.status(200).send({ status: 'sucesso', message: 'Evento recebido, mas não tratado' });
+    }
+  } catch (error) {
+    console.error('Erro ao processar webhook:', error.message);
+    res.status(500).send({ status: 'erro', message: 'Erro no processamento do webhook', detalhes: error.message });
+  }
+});
+
 app.post('/criar-pagamento', async (req, res) => {
   try {
     const { email, plano } = req.body;
@@ -72,81 +90,6 @@ app.post('/criar-pagamento', async (req, res) => {
         email: email,
         first_name: 'Cliente',
         last_name: 'PIX',
-        identification: {
-          type: 'CPF',
-          number: '12345678909'
-        }
-      }
-    };
-
-    const response = await mercadopago.payment.create(payment_data);
-
-    if (response.body && response.body.id) {
-      res.json({
-        paymentId: response.body.id,
-        qrCode: response.body.point_of_interaction?.transaction_data?.qr_code,
-        qrCodeBase64: response.body.point_of_interaction?.transaction_data?.qr_code_base64,
-        status: response.body.status
-      });
-    } else {
-      console.error('Erro: Resposta inesperada do Mercado Pago:', response.body);
-      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.body });
-    }
-  } catch (error) {
-    console.error('Erro ao criar pagamento:', error.response?.data || error.message);
-    res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
-  }
-});
-
-app.post('/webhook', (req, res) => {
-  try {
-    const event = req.body;
-    console.log('Webhook recebido:', JSON.stringify(event, null, 2));
-
-    if (event.type === 'payment' && event.data && event.data.id) {
-      console.log('Pagamento recebido:', event.data.id);
-      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido' });
-    } else {
-      console.log('Evento não tratado:', event.type);
-      res.status(200).send({ status: 'sucesso', message: 'Evento recebido, mas não tratado' });
-    }
-  } catch (error) {
-    console.error('Erro ao processar webhook:', error.message);
-    res.status(500).send({ status: 'erro', message: 'Erro no processamento do webhook', detalhes: error.message });
-  }
-}); else {
-      console.log('Evento não tratado:', event.type);
-      res.status(200).send('Evento recebido, mas não tratado');
-    }
-  } catch (error) {
-    console.error('Erro ao processar webhook:', error.message);
-    res.status(500).send('Erro no processamento do webhook');
-  }
-});
-    }
-
-    const idempotencyKey = uuidv4();
-    const valor = plano === 'normal' ? 27.50 : 1;
-    const externalReference = uuidv4();
-
-    const payment_data = {
-      statement_descriptor: 'Finanzap',
-      transaction_amount: parseFloat(valor.toFixed(2)),
-      description: 'Finanzap',
-      additional_info: {
-        items: [{
-          id: 'finanzap_001',
-          title: `Plano ${plano}`,
-          description: 'Acesso ao Assistente Financeiro',
-          category_id: 'services',
-          quantity: 1,
-          unit_price: parseFloat(valor.toFixed(2))
-        }]
-      },
-      payment_method_id: 'pix',
-      notification_url: WEBHOOK_URL,
-      external_reference: externalReference,
-      payer: { email: email, first_name: 'Cliente', last_name: 'PIX', identification: { type: 'CPF', number: '12345678909' } },
         identification: {
           type: 'CPF',
           number: '12345678909'
