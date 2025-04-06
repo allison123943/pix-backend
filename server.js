@@ -33,7 +33,7 @@ app.post('/criar-pagamento', async (req, res) => {
 
     const response = await axios.post('https://api.mercadopago.com/v1/payments', {
       transaction_amount: 1,
-      description: "Produto Exemplo",
+      description: "Finanzap",
       payment_method_id: "pix",
       payer: {
         email: email,
@@ -75,7 +75,7 @@ app.post('/criar-pagamento', async (req, res) => {
   }
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
