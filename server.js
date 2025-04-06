@@ -81,9 +81,10 @@ app.post('/criar-pagamento', async (req, res) => {
     }
 
     const idempotencyKey = uuidv4();
+    const valor = plano === 'normal' ? 27.50 : 1;  // Valor ajustado para o plano normal
 
     const response = await axios.post('https://api.mercadopago.com/v1/payments', {
-      transaction_amount: 1,
+      transaction_amount: parseFloat(valor.toFixed(2)),
       description: 'Finanzap',
       payment_method_id: 'pix',
       payer: {
