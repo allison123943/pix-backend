@@ -39,24 +39,6 @@ function verifySignature(req, secret) {
   return signature === hash;
 }
 
-app.post('/webhook', (req, res) => {
-  try {
-    const event = req.body;
-    console.log('Webhook recebido:', JSON.stringify(event, null, 2));
-
-    if (event.type === 'payment' && (event.action === 'payment.updated' || event.data.status === 'approved')) {
-      console.log('Pagamento atualizado/aprovado:', event.data.id);
-      res.status(200).send('Pagamento recebido e processado');
-    } else {
-      console.log('Evento não tratado:', event.type, event.action);
-      res.status(200).send('Evento recebido, mas não tratado');
-    }
-  } catch (error) {
-    console.error('Erro ao processar webhook:', error.message);
-    res.status(500).send('Erro no processamento do webhook');
-  }
-});
-
 app.post('/criar-pagamento', async (req, res) => {
   try {
     const { email, plano } = req.body;
@@ -99,29 +81,16 @@ app.post('/criar-pagamento', async (req, res) => {
     const response = await mercadopago.payment.create(payment_data);
 
     if (response.body && response.body.id) {
-      const planoArquivo = planos[plano] || planos.normal;
-      const pdfPath = path.join(__dirname, planoArquivo);
-
-      await transporter.sendMail({
-        from: '"Assistente Financeiro" <oficialfinanzap@gmail.com>',
-        to: email,
-        subject: `Instruções de Pagamento - Plano ${plano}`,
-        text: 'Obrigado pelo pagamento. Seguem as instruções em anexo.',
-        attachments: [
-          {
-            filename: planoArquivo,
-            path: pdfPath
-          }
-        ]
+      res.json({
+        paymentId: response.body.id,
+        qrCode: response.body.point_of_interaction.transaction_data.qr_code,
+        qrCodeBase64: response.body.point_of_interaction.transaction_data.qr_code_base64,
+        status: response.body.status
       });
-
-      res.json({ paymentId: response.body.id, status: response.body.status });
     } else {
-      console.error('Erro: Resposta inesperada do Mercado Pago:', response.body);
-      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.body });
+      res.status(500).json({ error: 'Erro ao criar pagamento', details: response.body });
     }
   } catch (error) {
-    console.error('Erro ao criar pagamento:', error.response?.data || error.message);
     res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
   }
 });
