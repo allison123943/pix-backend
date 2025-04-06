@@ -75,6 +75,11 @@ app.post('/webhook', (req, res) => {
 app.post('/criar-pagamento', async (req, res) => {
   try {
     const { email, plano } = req.body;
+
+    if (!email || !plano) {
+      return res.status(400).json({ error: 'Dados incompletos: email e plano são obrigatórios' });
+    }
+
     const idempotencyKey = uuidv4();
 
     const response = await axios.post('https://api.mercadopago.com/v1/payments', {
@@ -98,26 +103,31 @@ app.post('/criar-pagamento', async (req, res) => {
       }
     });
 
-    const planoArquivo = planos[plano] || planos.normal;
-    const pdfPath = path.join(__dirname, planoArquivo);
+    if (response.data && response.data.id) {
+      const planoArquivo = planos[plano] || planos.normal;
+      const pdfPath = path.join(__dirname, planoArquivo);
 
-    await transporter.sendMail({
-      from: '"Assistente Financeiro" <oficialfinanzap@gmail.com>',
-      to: email,
-      subject: `Instruções de Pagamento - Plano ${plano}`,
-      text: 'Obrigado pelo pagamento. Seguem as instruções em anexo.',
-      attachments: [
-        {
-          filename: planoArquivo,
-          path: pdfPath
-        }
-      ]
-    });
+      await transporter.sendMail({
+        from: '"Assistente Financeiro" <oficialfinanzap@gmail.com>',
+        to: email,
+        subject: `Instruções de Pagamento - Plano ${plano}`,
+        text: 'Obrigado pelo pagamento. Seguem as instruções em anexo.',
+        attachments: [
+          {
+            filename: planoArquivo,
+            path: pdfPath
+          }
+        ]
+      });
 
-    res.json({ paymentId: response.data.id });
+      res.json({ paymentId: response.data.id, status: response.data.status });
+    } else {
+      console.error('Erro: Resposta inesperada do Mercado Pago:', response.data);
+      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago' });
+    }
   } catch (error) {
     console.error('Erro ao criar pagamento:', error.response?.data || error.message);
-    res.status(500).send('Erro ao criar pagamento');
+    res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
   }
 });
 
