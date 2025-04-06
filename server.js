@@ -65,16 +65,6 @@ app.post('/criar-pagamento', async (req, res) => {
           type: 'CPF',
           number: '12345678909'
         }
-      },
-      additional_info: {
-        items: [{
-          id: 'finanzap_001',
-          title: `Plano ${plano}`,
-          description: 'Acesso ao Assistente Financeiro',
-          category_id: 'services',
-          quantity: 1,
-          unit_price: parseFloat(valor.toFixed(2))
-        }]
       }
     };
 
@@ -83,14 +73,16 @@ app.post('/criar-pagamento', async (req, res) => {
     if (response.body && response.body.id) {
       res.json({
         paymentId: response.body.id,
-        qrCode: response.body.point_of_interaction.transaction_data.qr_code,
-        qrCodeBase64: response.body.point_of_interaction.transaction_data.qr_code_base64,
+        qrCode: response.body.point_of_interaction?.transaction_data?.qr_code,
+        qrCodeBase64: response.body.point_of_interaction?.transaction_data?.qr_code_base64,
         status: response.body.status
       });
     } else {
-      res.status(500).json({ error: 'Erro ao criar pagamento', details: response.body });
+      console.error('Erro: Resposta inesperada do Mercado Pago:', response.body);
+      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.body });
     }
   } catch (error) {
+    console.error('Erro ao criar pagamento:', error.response?.data || error.message);
     res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
   }
 });
