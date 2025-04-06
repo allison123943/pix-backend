@@ -86,15 +86,7 @@ app.post('/criar-pagamento', async (req, res) => {
       payment_method_id: 'pix',
       notification_url: WEBHOOK_URL,
       external_reference: externalReference,
-      payer: {
-        email: email,
-        first_name: 'Cliente',
-        last_name: 'PIX',
-        identification: {
-          type: 'CPF',
-          number: '12345678909'
-        }
-      }
+      payer: { email: email, first_name: 'Cliente', last_name: 'PIX', identification: { type: 'CPF', number: '12345678909' } }
     };
 
     const response = await mercadopago.payment.create(payment_data);
@@ -107,12 +99,20 @@ app.post('/criar-pagamento', async (req, res) => {
         status: response.body.status
       });
     } else {
-      console.error('Erro: Resposta inesperada do Mercado Pago:', response.body);
-      res.status(500).json({ error: 'Erro ao criar pagamento: resposta inesperada do Mercado Pago', details: response.body });
+      res.status(500).json({ error: 'Erro ao criar pagamento', details: response.body });
     }
   } catch (error) {
-    console.error('Erro ao criar pagamento:', error.response?.data || error.message);
     res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
+  }
+});
+
+app.get('/verificar-pagamento/:paymentId', async (req, res) => {
+  try {
+    const paymentId = req.params.paymentId;
+    const response = await mercadopago.payment.get(paymentId);
+    res.json({ status: response.body.status });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao verificar pagamento', details: error.response?.data || error.message });
   }
 });
 
