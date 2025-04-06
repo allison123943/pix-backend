@@ -69,10 +69,7 @@ app.post('/criar-pagamento', async (req, res) => {
       payment_method_id: 'pix',
       notification_url: WEBHOOK_URL,
       external_reference: externalReference,
-      payer: {
-        email: email,
-        first_name: 'Cliente',
-        last_name: 'PIX',
+      payer: { email: email, first_name: 'Cliente', last_name: 'PIX', identification: { type: 'CPF', number: '12345678909' },
         identification: {
           type: 'CPF',
           number: '12345678909'
