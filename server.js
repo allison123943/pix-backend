@@ -39,14 +39,47 @@ function verifySignature(req, secret) {
   return signature === hash;
 }
 
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
   try {
     const event = req.body;
     console.log('Webhook recebido:', JSON.stringify(event, null, 2));
 
     if (event.type === 'payment' && event.data && event.data.id) {
       console.log('Pagamento recebido:', event.data.id);
-      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido' });
+
+      const paymentResponse = await mercadopago.payment.get(event.data.id);
+      const payment = paymentResponse.body;
+
+      if (payment.status === 'approved') {
+        const email = payment.payer.email;
+        const plano = Object.keys(planos).find(p => payment.description.includes(p)) || 'normal';
+        const pdfPath = path.join(__dirname, planos[plano]);
+
+        if (fs.existsSync(pdfPath)) {
+          const mailOptions = {
+            from: 'oficialfinanzap@gmail.com',
+            to: email,
+            subject: 'Seu plano foi aprovado!',
+            text: `Olá! Seu pagamento do plano ${plano} foi aprovado. Em anexo está o PDF com as instruções.`,
+            attachments: [
+              {
+                filename: planos[plano],
+                path: pdfPath,
+                contentType: 'application/pdf'
+              }
+            ]
+          };
+          try {
+            await transporter.sendMail(mailOptions);
+            console.log('E-mail enviado para:', email);
+          } catch (emailError) {
+            console.error('Erro ao enviar e-mail:', emailError.message);
+          }
+        } else {
+          console.error('Arquivo PDF não encontrado:', pdfPath);
+        }
+      }
+      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido e processado' });
     } else {
       console.log('Evento não tratado:', event.type);
       res.status(200).send({ status: 'sucesso', message: 'Evento recebido, mas não tratado' });
@@ -103,17 +136,6 @@ app.post('/criar-pagamento', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
-  }
-});
-
-// Rota corrigida para verificar o status do pagamento
-app.get('/status-pagamento/:paymentId', async (req, res) => {
-  try {
-    const { paymentId } = req.params;
-    const response = await mercadopago.payment.get(paymentId);
-    res.json({ status: response.body.status });
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao verificar pagamento', details: error.response?.data || error.message });
   }
 });
 
