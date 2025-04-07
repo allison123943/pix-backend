@@ -1,3 +1,4 @@
+// Importação de módulos necessários
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -16,7 +17,6 @@ const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27
 const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
 const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 
-// Configurando o Mercado Pago SDK
 mercadopago.configure({ access_token: ACCESS_TOKEN });
 
 const transporter = nodemailer.createTransport({
@@ -33,27 +33,48 @@ const planos = {
   familia: 'instrucoes_assistente_financeiro_plano_familia.pdf'
 };
 
-function verifySignature(req, secret) {
-  const signature = req.headers['x-mp-signature'] || '';
-  const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
-  return signature === hash;
-}
-
-app.post('/webhook', (req, res) => {
+app.post('/webhook', async (req, res) => {
   try {
     const event = req.body;
-    console.log('Webhook recebido:', JSON.stringify(event, null, 2));
 
-    if (event.type === 'payment' && event.data && event.data.id) {
-      console.log('Pagamento recebido:', event.data.id);
-      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido' });
+    if (event.type === 'payment' && event.data?.id) {
+      const paymentId = event.data.id;
+
+      const paymentInfo = await mercadopago.payment.get(paymentId);
+
+      if (paymentInfo.body.status === 'approved') {
+        const email = paymentInfo.body.payer.email;
+        const plano = paymentInfo.body.additional_info.items[0].title
+          .replace('Plano ', '').toLowerCase();
+
+        const nomeArquivoPDF = planos[plano];
+        if (!nomeArquivoPDF) {
+          throw new Error(`Plano '${plano}' não encontrado`);
+        }
+
+        const pdfPath = path.join(__dirname, nomeArquivoPDF);
+
+        const mailOptions = {
+          from: 'oficialfinanzap@gmail.com',
+          to: email,
+          subject: 'Seu PDF com instruções está aqui! 🎉',
+          text: 'Obrigado por sua compra! Em anexo está o PDF com as instruções do seu plano.',
+          attachments: [{
+            filename: nomeArquivoPDF,
+            path: pdfPath
+          }]
+        };
+
+        await transporter.sendMail(mailOptions);
+        res.status(200).send({ status: 'sucesso', message: 'Pagamento confirmado e PDF enviado.' });
+      } else {
+        res.status(200).send({ status: 'pendente', message: 'Pagamento recebido, porém não aprovado ainda.' });
+      }
     } else {
-      console.log('Evento não tratado:', event.type);
-      res.status(200).send({ status: 'sucesso', message: 'Evento recebido, mas não tratado' });
+      res.status(200).send({ status: 'sucesso', message: 'Evento não tratado recebido.' });
     }
   } catch (error) {
-    console.error('Erro ao processar webhook:', error.message);
-    res.status(500).send({ status: 'erro', message: 'Erro no processamento do webhook', detalhes: error.message });
+    res.status(500).send({ status: 'erro', message: 'Falha ao processar webhook', detalhes: error.message });
   }
 });
 
@@ -65,7 +86,6 @@ app.post('/criar-pagamento', async (req, res) => {
       return res.status(400).json({ error: 'Dados incompletos: email e plano são obrigatórios' });
     }
 
-    const idempotencyKey = uuidv4();
     const valor = plano === 'normal' ? 1.00 : 1;
     const externalReference = uuidv4();
 
@@ -86,27 +106,27 @@ app.post('/criar-pagamento', async (req, res) => {
       payment_method_id: 'pix',
       notification_url: WEBHOOK_URL,
       external_reference: externalReference,
-      payer: { email: email, first_name: 'Cliente', last_name: 'PIX', identification: { type: 'CPF', number: '12345678909' } }
+      payer: {
+        email: email,
+        first_name: 'Cliente',
+        last_name: 'PIX',
+        identification: { type: 'CPF', number: '12345678909' }
+      }
     };
 
     const response = await mercadopago.payment.create(payment_data);
 
-    if (response.body && response.body.id) {
-      res.json({
-        paymentId: response.body.id,
-        qrCode: response.body.point_of_interaction?.transaction_data?.qr_code,
-        qrCodeBase64: response.body.point_of_interaction?.transaction_data?.qr_code_base64,
-        status: response.body.status
-      });
-    } else {
-      res.status(500).json({ error: 'Erro ao criar pagamento', details: response.body });
-    }
+    res.json({
+      paymentId: response.body.id,
+      qrCode: response.body.point_of_interaction?.transaction_data?.qr_code,
+      qrCodeBase64: response.body.point_of_interaction?.transaction_data?.qr_code_base64,
+      status: response.body.status
+    });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
   }
 });
 
-// Rota corrigida para verificar o status do pagamento
 app.get('/status-pagamento/:paymentId', async (req, res) => {
   try {
     const { paymentId } = req.params;
@@ -119,5 +139,5 @@ app.get('/status-pagamento/:paymentId', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
