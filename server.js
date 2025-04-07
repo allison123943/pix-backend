@@ -92,22 +92,6 @@ app.post('/criar-pagamento', async (req, res) => {
     const response = await mercadopago.payment.create(payment_data);
 
     if (response.body && response.body.id) {
-      const planoArquivo = planos[plano];
-      const pdfPath = path.join(__dirname, planoArquivo);
-
-      await transporter.sendMail({
-        from: '"Assistente Financeiro" <oficialfinanzap@gmail.com>',
-        to: email,
-        subject: `Instruções de Pagamento - Plano ${plano}`,
-        text: 'Obrigado pelo pagamento. Seguem as instruções em anexo.',
-        attachments: [
-          {
-            filename: planoArquivo,
-            path: pdfPath
-          }
-        ]
-      });
-
       res.json({
         paymentId: response.body.id,
         qrCode: response.body.point_of_interaction?.transaction_data?.qr_code,
