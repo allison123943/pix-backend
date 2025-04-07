@@ -28,9 +28,9 @@ const transporter = nodemailer.createTransport({
 });
 
 const planos = {
-  normal: 'Instrucoes_Assistente_Financeiro.pdf',
-  casal: 'instrucoes_assistente_financeiro_plano_casal.pdf',
-  familia: 'instrucoes_assistente_financeiro_plano_familia.pdf'
+  normal: 'instrucoesAssistenteFinanceiro.pdf',
+  casal: 'instrucoes_assistentefinanceiroplano casal.pdf',
+  familia: 'instrucoesassistentefinanceiroplano familia.pdf'
 };
 
 app.post('/webhook', async (req, res) => {
