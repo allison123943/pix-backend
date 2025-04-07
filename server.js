@@ -16,6 +16,7 @@ const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27
 const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
 const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 
+// Configurando o Mercado Pago SDK
 mercadopago.configure({ access_token: ACCESS_TOKEN });
 
 const transporter = nodemailer.createTransport({
@@ -38,26 +39,6 @@ function verifySignature(req, secret) {
   return signature === hash;
 }
 
-async function sendPdfByEmail(email, plano) {
-  const filePath = path.join(__dirname, 'Pdfs', planos[plano]);
-  const mailOptions = {
-    from: 'oficialfinanzap@gmail.com',
-    to: email,
-    subject: 'Instruções de Uso - Assistente Financeiro',
-    text: 'Obrigado pela sua compra! Segue em anexo o PDF com as instruções.',
-    attachments: [
-      { filename: planos[plano], path: filePath }
-    ]
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`PDF enviado para ${email}`);
-  } catch (error) {
-    console.error(`Erro ao enviar PDF para ${email}:`, error.message);
-  }
-}
-
 app.post('/webhook', (req, res) => {
   try {
     const event = req.body;
@@ -65,19 +46,6 @@ app.post('/webhook', (req, res) => {
 
     if (event.type === 'payment' && event.data && event.data.id) {
       console.log('Pagamento recebido:', event.data.id);
-
-      const paymentId = event.data.id;
-      mercadopago.payment.get(paymentId)
-        .then(async (response) => {
-          const { status, payer } = response.body;
-          if (status === 'approved') {
-            const email = payer.email;
-            const plano = 'normal'; // Substituir pela lógica correta para obter o plano
-            await sendPdfByEmail(email, plano);
-          }
-        })
-        .catch(error => console.error('Erro ao obter pagamento:', error.message));
-
       res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido' });
     } else {
       console.log('Evento não tratado:', event.type);
@@ -86,6 +54,66 @@ app.post('/webhook', (req, res) => {
   } catch (error) {
     console.error('Erro ao processar webhook:', error.message);
     res.status(500).send({ status: 'erro', message: 'Erro no processamento do webhook', detalhes: error.message });
+  }
+});
+
+app.post('/criar-pagamento', async (req, res) => {
+  try {
+    const { email, plano } = req.body;
+
+    if (!email || !plano) {
+      return res.status(400).json({ error: 'Dados incompletos: email e plano são obrigatórios' });
+    }
+
+    const idempotencyKey = uuidv4();
+    const valor = plano === 'normal' ? 27.50 : 1;
+    const externalReference = uuidv4();
+
+    const payment_data = {
+      statement_descriptor: 'Finanzap',
+      transaction_amount: parseFloat(valor.toFixed(2)),
+      description: 'Finanzap',
+      additional_info: {
+        items: [{
+          id: 'finanzap_001',
+          title: `Plano ${plano}`,
+          description: 'Acesso ao Assistente Financeiro',
+          category_id: 'services',
+          quantity: 1,
+          unit_price: parseFloat(valor.toFixed(2))
+        }]
+      },
+      payment_method_id: 'pix',
+      notification_url: WEBHOOK_URL,
+      external_reference: externalReference,
+      payer: { email: email, first_name: 'Cliente', last_name: 'PIX', identification: { type: 'CPF', number: '12345678909' } }
+    };
+
+    const response = await mercadopago.payment.create(payment_data);
+
+    if (response.body && response.body.id) {
+      res.json({
+        paymentId: response.body.id,
+        qrCode: response.body.point_of_interaction?.transaction_data?.qr_code,
+        qrCodeBase64: response.body.point_of_interaction?.transaction_data?.qr_code_base64,
+        status: response.body.status
+      });
+    } else {
+      res.status(500).json({ error: 'Erro ao criar pagamento', details: response.body });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
+  }
+});
+
+// Rota corrigida para verificar o status do pagamento
+app.get('/status-pagamento/:paymentId', async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const response = await mercadopago.payment.get(paymentId);
+    res.json({ status: response.body.status });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao verificar pagamento', details: error.response?.data || error.message });
   }
 });
 
