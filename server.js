@@ -7,31 +7,31 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const mercadopago = require('mercadopago');
+require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-console.log('⏳ Inicializando servidor Finanzap...');
-console.log('🛠️  Configurando middlewares: CORS e JSON parser...');
+console.log('🚀 Inicializando servidor Finanzap...');
+console.log('⚙️  Configurando middlewares: CORS e JSON parser...');
 
-const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27892a0d-287816612';
-const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
+const ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
+const WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET;
 const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 
-console.log('🔗 Configurando Mercado Pago com access token...');
+console.log('💳 Configurando Mercado Pago com access token...');
 mercadopago.configure({ access_token: ACCESS_TOKEN });
 
 console.log('📧 Configurando transporte de e-mail...');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'oficialfinanzap@gmail.com',
-    pass: 'SUA_SENHA'
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD
   }
 });
 
-// Testar conexão com o serviço de e-mail
 transporter.verify((error, success) => {
   if (error) {
     console.error('❌ Falha na conexão com o serviço de e-mail:', error);
@@ -46,14 +46,16 @@ const planos = {
   familia: 'instrucoes_assistentefinanceiroplanofamilia.pdf'
 };
 
-console.log('📂 Planos disponíveis configurados:', JSON.stringify(planos, null, 2));
+const precos = {
+  normal: 27.50,
+  casal: 48.00,
+  familia: 55.00
+};
 
-// Banco de dados em memória para pagamentos aprovados (novo)
+console.log('📁 Planos e preços configurados:', JSON.stringify({ planos, precos }, null, 2));
+
 const pagamentosAprovados = new Map();
 
-/**
- * Função para enviar o PDF por e-mail (original mantida)
- */
 async function enviarPDFPorEmail(email, plano) {
   console.log(`\n📨 Iniciando envio de e-mail para ${email} (Plano: ${plano})`);
   
@@ -63,7 +65,7 @@ async function enviarPDFPorEmail(email, plano) {
     }
 
     const pdfPath = path.join(__dirname, planos[plano]);
-    console.log(`📂 Verificando arquivo em: ${pdfPath}`);
+    console.log(`📁 Verificando arquivo em: ${pdfPath}`);
 
     if (!fs.existsSync(pdfPath)) {
       throw new Error(`Arquivo PDF não encontrado: ${pdfPath}`);
@@ -73,7 +75,7 @@ async function enviarPDFPorEmail(email, plano) {
     const mailOptions = {
       from: 'Finanzap <oficialfinanzap@gmail.com>',
       to: email,
-      subject: '📕 Seu Material Finanzap - Acesso ao Conteúdo',
+      subject: '📚 Seu Material Finanzap - Acesso ao Conteúdo',
       html: `<div style="font-family: Arial, sans-serif; color: #333;">
               <h1 style="color: #2c3e50;">Seu material está pronto!</h1>
               <p>Obrigado por adquirir o plano <strong>${plano}</strong> do Finanzap!</p>
@@ -101,17 +103,16 @@ async function enviarPDFPorEmail(email, plano) {
 }
 
 function verifySignature(req, secret) {
-  console.log('🔏 Verificando assinatura do webhook...');
+  console.log('🔒 Verificando assinatura do webhook...');
   const signature = req.headers['x-mp-signature'] || '';
   const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
   const isValid = signature === hash;
-  console.log(`🔐 Assinatura ${isValid ? 'válida' : 'inválida'}`);
+  console.log(`🔑 Assinatura ${isValid ? 'válida' : 'inválida'}`);
   return isValid;
 }
 
-// Webhook original (modificado para não enviar e-mail automaticamente)
 app.post('/webhook', async (req, res) => {
-  console.log('\n--- 🌐 NOVA REQUISIÇÃO DE WEBHOOK RECEBIDA ---');
+  console.log('\n--- 🎉 NOVA REQUISIÇÃO DE WEBHOOK RECEBIDA ---');
   
   if (!verifySignature(req, WEBHOOK_SECRET)) {
     console.error('🚨 Erro: Assinatura de webhook inválida');
@@ -122,20 +123,19 @@ app.post('/webhook', async (req, res) => {
 
   if (event.type === 'payment' && event.data?.id) {
     const paymentId = event.data.id;
-    console.log(`💳 Processando pagamento ID: ${paymentId}`);
+    console.log(`📥 Processando pagamento ID: ${paymentId}`);
 
     try {
       const paymentInfo = await mercadopago.payment.get(paymentId);
-      console.log('🔄 Status do pagamento:', paymentInfo.body.status);
+      console.log('ℹ️ Status do pagamento:', paymentInfo.body.status);
 
       if (paymentInfo.body.status === 'approved') {
         const plano = paymentInfo.body.additional_info.items[0].title.split(' ')[1].toLowerCase();
         
-        // Armazena o pagamento aprovado (sem enviar e-mail)
         pagamentosAprovados.set(paymentId, {
           plano,
           dataAprovacao: new Date(),
-          email: paymentInfo.body.payer.email // Mantém o e-mail original como fallback
+          email: paymentInfo.body.payer.email
         });
         
         console.log('✅ Pagamento aprovado. Aguardando confirmação de e-mail');
@@ -151,7 +151,7 @@ app.post('/webhook', async (req, res) => {
         });
       }
     } catch (error) {
-      console.error('💥 Erro ao processar pagamento:', error);
+      console.error('🔥 Erro ao processar pagamento:', error);
       res.status(500).send({ 
         status: 'erro', 
         message: error.message 
@@ -165,18 +165,25 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Rota original para criar pagamento (mantida sem alterações)
 app.post('/criar-pagamento', async (req, res) => {
-  console.log('\n--- 💸 NOVA SOLICITAÇÃO DE PAGAMENTO ---');
+  console.log('\n--- 💰 NOVA SOLICITAÇÃO DE PAGAMENTO ---');
   const { email, plano } = req.body;
-  console.log(`📩 Cliente: ${email} | Plano: ${plano}`);
+  console.log(`📧 Cliente: ${email} | Plano: ${plano}`);
+
+  if (!precos[plano]) {
+    console.error('❌ Plano inválido:', plano);
+    return res.status(400).json({ error: 'Plano inválido' });
+  }
 
   const externalReference = uuidv4();
-  console.log('🆔 External Reference gerado:', externalReference);
+  console.log('🔗 External Reference gerado:', externalReference);
 
   try {
+    const valorPlano = precos[plano];
+    console.log(`💰 Valor do Plano (${plano}): R$ ${valorPlano.toFixed(2)}`);
+
     const response = await mercadopago.payment.create({
-      transaction_amount: 1.00,
+      transaction_amount: valorPlano,
       description: `Plano ${plano}`,
       payment_method_id: 'pix',
       notification_url: WEBHOOK_URL,
@@ -186,7 +193,7 @@ app.post('/criar-pagamento', async (req, res) => {
         items: [{
           title: `Plano ${plano}`,
           quantity: 1,
-          unit_price: 1.00
+          unit_price: valorPlano
         }]
       }
     });
@@ -208,7 +215,6 @@ app.post('/criar-pagamento', async (req, res) => {
   }
 });
 
-// Rota original para status de pagamento (mantida)
 app.get('/status-pagamento/:paymentId', async (req, res) => {
   const { paymentId } = req.params;
   console.log(`\n🔍 Consultando status do pagamento ID: ${paymentId}`);
@@ -228,19 +234,11 @@ app.get('/status-pagamento/:paymentId', async (req, res) => {
   }
 });
 
-// ======================================
-// NOVAS ROTAS PARA CONFIRMAÇÃO DE E-MAIL
-// ======================================
-
-/**
- * Nova rota para verificar pagamento aprovado
- */
 app.get('/verificar-aprovacao/:paymentId', async (req, res) => {
   const { paymentId } = req.params;
   console.log(`\n🔍 Verificando aprovação para pagamento ID: ${paymentId}`);
 
   try {
-    // Verifica na memória primeiro
     if (pagamentosAprovados.has(paymentId)) {
       return res.json({ 
         aprovado: true,
@@ -248,7 +246,6 @@ app.get('/verificar-aprovacao/:paymentId', async (req, res) => {
       });
     }
 
-    // Se não encontrado, consulta Mercado Pago
     const paymentInfo = await mercadopago.payment.get(paymentId);
     const aprovado = paymentInfo.body.status === 'approved';
 
@@ -263,7 +260,7 @@ app.get('/verificar-aprovacao/:paymentId', async (req, res) => {
 
     res.json({ 
       aprovado,
-      requerEmail: aprovado // Só requer e-mail se estiver aprovado
+      requerEmail: aprovado
     });
 
   } catch (error) {
@@ -274,16 +271,12 @@ app.get('/verificar-aprovacao/:paymentId', async (req, res) => {
   }
 });
 
-/**
- * Nova rota para solicitar envio do PDF
- */
 app.post('/confirmar-email', async (req, res) => {
-  console.log('\n--- 📬 CONFIRMAÇÃO DE E-MAIL RECEBIDA ---');
+  console.log('\n--- 📩 CONFIRMAÇÃO DE E-MAIL RECEBIDA ---');
   const { paymentId, email } = req.body;
-  console.log(`📝 Dados: paymentId=${paymentId}, email=${email}`);
+  console.log(`📨 Dados: paymentId=${paymentId}, email=${email}`);
 
   try {
-    // Verifica se o pagamento existe e foi aprovado
     if (!pagamentosAprovados.has(paymentId)) {
       console.log('⚠️ Pagamento não encontrado na memória. Verificando no Mercado Pago...');
       const paymentInfo = await mercadopago.payment.get(paymentId);
@@ -303,10 +296,8 @@ app.post('/confirmar-email', async (req, res) => {
     const { plano } = pagamentosAprovados.get(paymentId);
     console.log(`📤 Enviando PDF do plano ${plano} para: ${email}`);
 
-    // Envia o e-mail
     await enviarPDFPorEmail(email, plano);
 
-    // Remove da memória após envio (opcional)
     pagamentosAprovados.delete(paymentId);
 
     res.json({ 
@@ -323,7 +314,6 @@ app.post('/confirmar-email', async (req, res) => {
   }
 });
 
-// Rota de teste original mantida
 app.get('/testar-email/:email/:plano', async (req, res) => {
   console.log('\n--- ✉️  TESTE DE ENVIO DE E-MAIL ---');
   const { email, plano } = req.params;
@@ -346,7 +336,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log('\n========================================');
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log(`🌍 Webhook configurado para: ${WEBHOOK_URL}`);
-  console.log('🛡️  Pronto para receber requisições');
+  console.log(`🌐 Webhook configurado para: ${WEBHOOK_URL}`);
+  console.log('🛠️  Pronto para receber requisições');
   console.log('========================================\n');
 });
