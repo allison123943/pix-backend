@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
@@ -16,7 +15,6 @@ const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27
 const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
 const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 
-// Configurando o Mercado Pago SDK
 mercadopago.configure({ access_token: ACCESS_TOKEN });
 
 const transporter = nodemailer.createTransport({
@@ -41,52 +39,63 @@ function verifySignature(req, secret) {
 
 app.post('/webhook', async (req, res) => {
   try {
+    if (!verifySignature(req, WEBHOOK_SECRET)) {
+      return res.status(401).send('Assinatura inválida');
+    }
+
     const event = req.body;
     console.log('Webhook recebido:', JSON.stringify(event, null, 2));
 
-    if (event.type === 'payment' && event.data && event.data.id) {
-      console.log('Pagamento recebido:', event.data.id);
+    if (event.type === 'payment' && event.data?.id) {
+      const paymentId = event.data.id;
+      
+      const payment = await mercadopago.payment.get(paymentId);
+      const paymentStatus = payment.body.status;
+      
+      console.log(`Status do pagamento ${paymentId}: ${paymentStatus}`);
 
-      const paymentResponse = await mercadopago.payment.get(event.data.id);
-      const payment = paymentResponse.body;
+      if (paymentStatus === 'approved') {
+        const payerEmail = payment.body.payer.email;
+        const itemTitle = payment.body.additional_info.items[0].title;
+        const plan = itemTitle.split(' ')[1].toLowerCase();
+        
+        console.log(`Pagamento aprovado para ${payerEmail}, plano: ${plan}`);
 
-      if (payment.status === 'approved') {
-        const email = payment.payer.email;
-        const plano = Object.keys(planos).find(p => payment.description.includes(p)) || 'normal';
-        const pdfPath = path.join(__dirname, planos[plano]);
-
-        if (fs.existsSync(pdfPath)) {
-          const mailOptions = {
-            from: 'oficialfinanzap@gmail.com',
-            to: email,
-            subject: 'Seu plano foi aprovado!',
-            text: `Olá! Seu pagamento do plano ${plano} foi aprovado. Em anexo está o PDF com as instruções.`,
-            attachments: [
-              {
-                filename: planos[plano],
-                path: pdfPath,
-                contentType: 'application/pdf'
-              }
-            ]
-          };
-          try {
-            await transporter.sendMail(mailOptions);
-            console.log('E-mail enviado para:', email);
-          } catch (emailError) {
-            console.error('Erro ao enviar e-mail:', emailError.message);
-          }
-        } else {
-          console.error('Arquivo PDF não encontrado:', pdfPath);
+        const pdfFileName = planos[plan];
+        if (!pdfFileName) {
+          throw new Error(`Plano não reconhecido: ${plan}`);
         }
+
+        const pdfPath = path.join(__dirname, pdfFileName);
+        if (!fs.existsSync(pdfPath)) {
+          throw new Error(`Arquivo não encontrado: ${pdfFileName}`);
+        }
+
+        const mailOptions = {
+          from: 'oficialfinanzap@gmail.com',
+          to: payerEmail,
+          subject: '📄 Seu Material do Finanzap',
+          text: 'Obrigado por sua compra! Segue em anexo o material do seu plano.',
+          attachments: [{
+            filename: pdfFileName,
+            path: pdfPath
+          }]
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+          if (error) {
+            console.error('Erro ao enviar e-mail:', error);
+          } else {
+            console.log('E-mail enviado com sucesso:', info.response);
+          }
+        });
       }
-      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido e processado' });
-    } else {
-      console.log('Evento não tratado:', event.type);
-      res.status(200).send({ status: 'sucesso', message: 'Evento recebido, mas não tratado' });
     }
+    
+    res.status(200).send('OK');
   } catch (error) {
-    console.error('Erro ao processar webhook:', error.message);
-    res.status(500).send({ status: 'erro', message: 'Erro no processamento do webhook', detalhes: error.message });
+    console.error('Erro no webhook:', error);
+    res.status(500).send('Erro interno');
   }
 });
 
@@ -119,7 +128,15 @@ app.post('/criar-pagamento', async (req, res) => {
       payment_method_id: 'pix',
       notification_url: WEBHOOK_URL,
       external_reference: externalReference,
-      payer: { email: email, first_name: 'Cliente', last_name: 'PIX', identification: { type: 'CPF', number: '12345678909' } }
+      payer: { 
+        email: email, 
+        first_name: 'Cliente', 
+        last_name: 'PIX', 
+        identification: { 
+          type: 'CPF', 
+          number: '12345678909' 
+        } 
+      }
     };
 
     const response = await mercadopago.payment.create(payment_data);
@@ -135,7 +152,23 @@ app.post('/criar-pagamento', async (req, res) => {
       res.status(500).json({ error: 'Erro ao criar pagamento', details: response.body });
     }
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao criar pagamento', details: error.response?.data || error.message });
+    res.status(500).json({ 
+      error: 'Erro ao criar pagamento', 
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+app.get('/status-pagamento/:paymentId', async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const response = await mercadopago.payment.get(paymentId);
+    res.json({ status: response.body.status });
+  } catch (error) {
+    res.status(500).json({ 
+      error: 'Erro ao verificar pagamento', 
+      details: error.response?.data || error.message 
+    });
   }
 });
 
