@@ -106,9 +106,10 @@ app.post('/criar-pagamento', async (req, res) => {
   }
 });
 
-app.get('/verificar-pagamento/:paymentId', async (req, res) => {
+// Rota corrigida para verificar o status do pagamento
+app.get('/status-pagamento/:paymentId', async (req, res) => {
   try {
-    const paymentId = req.params.paymentId;
+    const { paymentId } = req.params;
     const response = await mercadopago.payment.get(paymentId);
     res.json({ status: response.body.status });
   } catch (error) {
