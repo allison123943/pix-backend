@@ -1,176 +1,124 @@
-// Adicione esta função para verificar e carregar os PDFs corretamente
-async function carregarPDFs() {
-    const pdfErrors = [];
-    
-    for (const [plano, arquivo] of Object.entries(PLANOS)) {
-        const pdfPath = path.join(__dirname, arquivo);
-        
-        try {
-            await fs.promises.access(pdfPath, fs.constants.R_OK);
-            const stats = await fs.promises.stat(pdfPath);
-            
-            if (stats.size === 0) {
-                throw new Error('Arquivo PDF vazio');
-            }
-            
-            logger.success(`PDF válido para o plano ${plano}`, {
-                path: pdfPath,
-                size: `${(stats.size / 1024).toFixed(2)} KB`
-            });
-        } catch (error) {
-            pdfErrors.push({ plano, error: error.message });
-            logger.error(`Problema com PDF do plano ${plano}`, error, {
-                path: pdfPath
-            });
-        }
-    }
-    
-    if (pdfErrors.length > 0) {
-        throw new Error(`Erros encontrados nos PDFs: ${JSON.stringify(pdfErrors)}`);
-    }
-}
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const nodemailer = require('nodemailer');
+const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const mercadopago = require('mercadopago');
 
-// Modifique a função de envio de e-mail para garantir o anexo
-async function enviarEmailComPDF(email, plano) {
-    const maskedEmail = maskData(email);
-    logger.info(`Preparando envio para ${maskedEmail}`, { plano });
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-    try {
-        const pdfPath = path.join(__dirname, PLANOS[plano]);
-        
-        // Verificação robusta do PDF
-        await fs.promises.access(pdfPath, fs.constants.R_OK);
-        const stats = await fs.promises.stat(pdfPath);
-        
-        if (stats.size === 0) {
-            throw new Error(`Arquivo PDF está vazio (${pdfPath})`);
-        }
+const ACCESS_TOKEN = 'APP_USR-2190858428063851-040509-f8899b0779b8753d85dae14f27892a0d-287816612';
+const WEBHOOK_SECRET = '01d71aa758c6c87c2190438452b1dd6d52c06f2975fa56a221f6f324bbfa1482';
+const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 
-        logger.debug(`PDF verificado com sucesso`, {
-            path: pdfPath,
-            size: `${(stats.size / 1024).toFixed(2)} KB`
-        });
+mercadopago.configure({ access_token: ACCESS_TOKEN });
 
-        const mailOptions = {
-            from: `Finanzap <${CONFIG.EMAIL_CONFIG.auth.user}>`,
-            to: email,
-            subject: '📄 Seu PDF do Finanzap',
-            html: `
-                <h1>Obrigado por sua compra!</h1>
-                <p>Segue em anexo o PDF do seu plano <strong>${plano}</strong>.</p>
-                <p>Caso tenha qualquer dúvida, responda este e-mail.</p>
-            `,
-            attachments: [{
-                filename: `Finanzap_${plano}.pdf`,
-                path: pdfPath,
-                contentType: 'application/pdf'
-            }],
-            headers: {
-                'X-Mailer': 'Finanzap Server',
-                'X-Priority': '1'
-            }
-        };
-
-        const info = await transporter.sendMail(mailOptions);
-        logger.success(`E-mail enviado para ${maskedEmail}`, {
-            messageId: info.messageId,
-            envelope: info.envelope,
-            pdfSize: `${(stats.size / 1024).toFixed(2)} KB`
-        });
-
-        return true;
-    } catch (error) {
-        logger.error(`Falha no envio para ${maskedEmail}`, error, {
-            plano,
-            errorDetails: {
-                code: error.code,
-                path: error.path,
-                syscall: error.syscall
-            }
-        });
-        
-        // Tentativa de fallback - enviar sem anexo se o PDF falhar
-        try {
-            await transporter.sendMail({
-                from: CONFIG.EMAIL_CONFIG.auth.user,
-                to: email,
-                subject: 'Problema com seu PDF do Finanzap',
-                text: `Houve um problema ao enviar o PDF do plano ${plano}. Estamos trabalhando para resolver.`
-            });
-            logger.warn(`E-mail de fallback enviado para ${maskedEmail}`);
-        } catch (fallbackError) {
-            logger.error(`Falha no fallback para ${maskedEmail}`, fallbackError);
-        }
-        
-        throw error;
-    }
-}
-
-// Adicione esta verificação durante a inicialização
-async function iniciarServidor() {
-    try {
-        await carregarPDFs();
-        
-        const PORT = process.env.PORT || 3000;
-        app.listen(PORT, () => {
-            logger.success(`Servidor rodando na porta ${PORT}`, {
-                pdfsCarregados: Object.keys(PLANOS).map(plano => ({
-                    plano,
-                    arquivo: PLANOS[plano],
-                    path: path.join(__dirname, PLANOS[plano])
-                }))
-            });
-        });
-    } catch (error) {
-        logger.error('Falha na inicialização do servidor', error, {
-            critical: true,
-            pdfs: Object.entries(PLANOS).map(([plano, arquivo]) => ({
-                plano,
-                arquivo,
-                exists: fs.existsSync(path.join(__dirname, arquivo))
-            }))
-        });
-        process.exit(1);
-    }
-}
-
-// Modifique o webhook para lidar melhor com PDFs
-app.post('/webhook', async (req, res) => {
-    // ... (código anterior mantido)
-    
-    if (paymentStatus === 'approved') {
-        const pagamento = pagamentosPendentes[externalReference];
-        
-        if (pagamento) {
-            try {
-                // Tentativa principal
-                await enviarEmailComPDF(pagamento.email, pagamento.plano);
-                
-                // Verificação de sucesso
-                if (pagamentosPendentes[externalReference]) {
-                    delete pagamentosPendentes[externalReference];
-                    logger.success(`Pagamento concluído e removido da lista`, {
-                        externalReference
-                    });
-                }
-            } catch (emailError) {
-                // Tentativa alternativa após 5 minutos
-                setTimeout(async () => {
-                    try {
-                        logger.warn(`Tentando reenviar e-mail para ${maskData(pagamento.email)}`);
-                        await enviarEmailComPDF(pagamento.email, pagamento.plano);
-                    } catch (retryError) {
-                        logger.error(`Falha no reenvio para ${maskData(pagamento.email)}`, retryError);
-                    }
-                }, 300000); // 5 minutos
-                
-                throw emailError;
-            }
-        }
-    }
-    
-    // ... (restante do código mantido)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'oficialfinanzap@gmail.com',
+    pass: 'SUA_SENHA'
+  }
 });
 
-// Inicie o servidor
-iniciarServidor();
+const planos = {
+   normal: 'instrucoesAssistenteFinanceiro.pdf',
+    casal: 'instrucoesassistentefinanceiroplanocasal.pdf',
+  familia: 'instrucoes_assistentefinanceiroplanofamilia.pdf'
+};
+
+function verifySignature(req, secret) {
+  const signature = req.headers['x-mp-signature'] || '';
+  const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
+  return signature === hash;
+}
+
+app.post('/webhook', async (req, res) => {
+  if (!verifySignature(req, WEBHOOK_SECRET)) {
+    return res.status(401).send({ error: 'Assinatura inválida' });
+  }
+
+  const event = req.body;
+
+  if (event.type === 'payment' && event.data && event.data.id) {
+    const paymentId = event.data.id;
+
+    try {
+      const paymentInfo = await mercadopago.payment.get(paymentId);
+
+      if (paymentInfo.body.status === 'approved') {
+        const email = paymentInfo.body.payer.email;
+        const plano = paymentInfo.body.additional_info.items[0].title.split(' ')[1].toLowerCase();
+
+        const mailOptions = {
+          from: 'oficialfinanzap@gmail.com',
+          to: email,
+          subject: '📄 Seu PDF Finanzap',
+          html: `<h1>Pagamento aprovado!</h1><p>Segue o PDF do seu plano <strong>${plano}</strong>.</p>`,
+          attachments: [{
+            filename: planos[plano],
+            path: path.join(__dirname, planos[plano]),
+            contentType: 'application/pdf'
+          }]
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).send({ status: 'sucesso', message: 'Pagamento aprovado e e-mail enviado' });
+      } else {
+        res.status(200).send({ status: 'aguardando', message: 'Pagamento ainda não aprovado' });
+      }
+    } catch (error) {
+      console.error('Erro:', error);
+      res.status(500).send({ status: 'erro', message: error.message });
+    }
+  } else {
+    res.status(200).send({ status: 'evento_ignorado', message: 'Evento não relacionado a pagamento' });
+  }
+});
+
+app.post('/criar-pagamento', async (req, res) => {
+  const { email, plano } = req.body;
+
+  const externalReference = uuidv4();
+
+  try {
+    const response = await mercadopago.payment.create({
+      transaction_amount: 1.00,
+      description: `Plano ${plano}`,
+      payment_method_id: 'pix',
+      notification_url: WEBHOOK_URL,
+      external_reference: externalReference,
+      payer: { email }
+    });
+
+    res.json({
+      paymentId: response.body.id,
+      qrCode: response.body.point_of_interaction.transaction_data.qr_code,
+      qrCodeBase64: response.body.point_of_interaction.transaction_data.qr_code_base64
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/status-pagamento/:paymentId', async (req, res) => {
+  const { paymentId } = req.params;
+
+  try {
+    const response = await mercadopago.payment.get(paymentId);
+    res.json({ status: response.body.status });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
