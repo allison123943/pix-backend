@@ -47,10 +47,11 @@ transporter.verify((error) => {
 });
 
 const planos = {
-    normal: 'Instrucoes_Assistente_Financeiro.pdf',
-    casal: 'instrucoes_assistente_financeiro_plano_casal.pdf',
-    familia: 'instrucoes_assistente_financeiro_plano_familia.pdf'
+    normal: 'instrucoesAssistenteFinanceiro.pdf',
+    casal: 'instrucoesassistentefinanceiroplanocasal.pdf',
+    familia: 'instrucoes_assistentefinanceiroplanofamilia.pdf'
 };
+
 
 // Verifica se os arquivos PDF existem
 Object.entries(planos).forEach(([plano, arquivo]) => {
