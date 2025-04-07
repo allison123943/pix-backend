@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
@@ -21,7 +22,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'oficialfinanzap@gmail.com',
-    pass: 'poxuomwnplynqopm'
+    pass: 'hrirzodqitdzwvrb'
   }
 });
 
@@ -31,80 +32,60 @@ const planos = {
   familia: 'instrucoes_assistente_financeiro_plano_familia.pdf'
 };
 
-function resolvePdfPath(pdfFileName) {
-  const possiblePaths = [
-    path.join(__dirname, 'pdfs', pdfFileName),
-    path.join(__dirname, 'Pdfs', pdfFileName),
-    path.join(process.cwd(), 'pdfs', pdfFileName),
-    path.join(process.cwd(), 'Pdfs', pdfFileName)
-  ];
-
-  for (const pdfPath of possiblePaths) {
-    if (fs.existsSync(pdfPath)) {
-      return pdfPath;
-    }
-  }
-  return null;
-}
-  }
-  return null;
-}
-  }
-  return null;
+function verifySignature(req, secret) {
+  const signature = req.headers['x-mp-signature'] || '';
+  const hash = crypto.createHmac('sha256', secret).update(JSON.stringify(req.body)).digest('hex');
+  return signature === hash;
 }
 
-app.post('/webhook', async (req, res) => {
+async function sendPdfByEmail(email, plano) {
+  const filePath = path.join(__dirname, 'Pdfs', planos[plano]);
+  const mailOptions = {
+    from: 'oficialfinanzap@gmail.com',
+    to: email,
+    subject: 'Instruções de Uso - Assistente Financeiro',
+    text: 'Obrigado pela sua compra! Segue em anexo o PDF com as instruções.',
+    attachments: [
+      { filename: planos[plano], path: filePath }
+    ]
+  };
+
   try {
-    if (!verifySignature(req, WEBHOOK_SECRET)) {
-      return res.status(401).send('Assinatura inválida');
-    }
+    await transporter.sendMail(mailOptions);
+    console.log(`PDF enviado para ${email}`);
+  } catch (error) {
+    console.error(`Erro ao enviar PDF para ${email}:`, error.message);
+  }
+}
 
+app.post('/webhook', (req, res) => {
+  try {
     const event = req.body;
     console.log('Webhook recebido:', JSON.stringify(event, null, 2));
 
-    if (event.type === 'payment' && event.data?.id) {
+    if (event.type === 'payment' && event.data && event.data.id) {
+      console.log('Pagamento recebido:', event.data.id);
+
       const paymentId = event.data.id;
-      const payment = await mercadopago.payment.get(paymentId);
-      const paymentStatus = payment.body.status;
-
-      if (paymentStatus === 'approved') {
-        const payerEmail = payment.body.payer.email;
-        const itemTitle = payment.body.additional_info.items[0].title;
-        const plan = itemTitle.toLowerCase().includes('casal') ? 'casal' : itemTitle.toLowerCase().includes('familia') ? 'familia' : 'normal';
-
-        const pdfFileName = planos[plan];
-        const pdfPath = resolvePdfPath(pdfFileName);
-
-        if (!pdfPath) {
-          console.error('Arquivo PDF não encontrado:', pdfFileName);
-          return res.status(404).send('Arquivo PDF não encontrado');
-        }
-
-        const mailOptions = {
-          from: 'oficialfinanzap@gmail.com',
-          to: payerEmail,
-          subject: '📄 Seu Material do Finanzap',
-          text: 'Obrigado por sua compra! Segue em anexo o material do seu plano.',
-          attachments: [{
-            filename: pdfFileName,
-            path: pdfPath
-          }]
-        };
-
-        transporter.sendMail(mailOptions, (error, info) => {
-          if (error) {
-            console.error('Erro ao enviar e-mail:', error.message);
-          } else {
-            console.log('E-mail enviado com sucesso:', info.response);
+      mercadopago.payment.get(paymentId)
+        .then(async (response) => {
+          const { status, payer } = response.body;
+          if (status === 'approved') {
+            const email = payer.email;
+            const plano = 'normal'; // Substituir pela lógica correta para obter o plano
+            await sendPdfByEmail(email, plano);
           }
-        });
-      }
-    }
+        })
+        .catch(error => console.error('Erro ao obter pagamento:', error.message));
 
-    res.status(200).send('OK');
+      res.status(200).send({ status: 'sucesso', message: 'Pagamento recebido' });
+    } else {
+      console.log('Evento não tratado:', event.type);
+      res.status(200).send({ status: 'sucesso', message: 'Evento recebido, mas não tratado' });
+    }
   } catch (error) {
-    console.error('Erro no webhook:', error.message);
-    res.status(500).send('Erro interno');
+    console.error('Erro ao processar webhook:', error.message);
+    res.status(500).send({ status: 'erro', message: 'Erro no processamento do webhook', detalhes: error.message });
   }
 });
 
