@@ -1,3 +1,4 @@
+
 {
   "name": "finanzap-backend",
   "version": "1.0.1",
@@ -15,7 +16,7 @@
     "axios": "^1.6.8",
     "nodemailer": "^6.9.13",
     "uuid": "^9.0.1",
-    "mercadopago": "^1.6.5"
+    "mercadopago": "^1.5.15"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
