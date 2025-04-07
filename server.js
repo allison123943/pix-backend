@@ -20,12 +20,16 @@ const WEBHOOK_URL = 'https://pix-backend-79lq.onrender.com/webhook';
 mercadopago.configure({ access_token: ACCESS_TOKEN });
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: 'oficialfinanzap@gmail.com',
     pass: 'hrirzodqitdzwvrb'
   }
 });
+
+module.exports = transporter;
 
 const planos = {
   normal: 'instrucoesAssistenteFinanceiro.pdf',
