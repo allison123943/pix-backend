@@ -49,6 +49,9 @@ function resolvePdfPath(pdfFileName) {
   }
   return null;
 }
+  }
+  return null;
+}
 
 app.post('/webhook', async (req, res) => {
   try {
