@@ -66,7 +66,7 @@ app.post('/criar-pagamento', async (req, res) => {
     }
 
     const idempotencyKey = uuidv4();
-    const valor = plano === 'normal' ? 27.50 : 1;
+    const valor = plano === 'normal' ? 1.00 : 1;
     const externalReference = uuidv4();
 
     const payment_data = {
